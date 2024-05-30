@@ -26,14 +26,12 @@ struct MEMORY
         return Data[Address];
     }
 
-    // Overriding write to memory the one above is for reading  
-    BYTE& operator[](u32 Address) 
+    // Overriding write to memory the one above is for reading
+    BYTE &operator[](u32 Address)
     {
         // Assert here Adress is < MAX_MEM
         return Data[Address];
     }
-
-
 };
 
 struct CPU
@@ -62,16 +60,34 @@ struct CPU
         printf("CPU Resetted\n");
     }
 
+    // This is for reading instructions it moves the program counter
     BYTE fetchByte(u32 &numCycles, MEMORY &memory)
     {
-        BYTE data = memory.Data[PC];
+        BYTE data = memory[PC];
         PC++;
         numCycles--;
         return data;
     }
 
+    // This is for reading data it doesn't move the program counter
+    BYTE readByte(u32 &numCycles, u32 Address, MEMORY &memory)
+    {
+        BYTE data = memory[Address];
+        numCycles--;
+        return data;
+    }
+
     // Opcodes
-    static constexpr BYTE INSTRUCTION_LDA_IM = 0xA9;
+    static constexpr BYTE
+        INSTRUCTION_LDA_IM = 0xA9,
+        INSTRUCTION_LDA_ZP = 0xA5;
+
+    // This is what you have to do in all the LDA instructions
+    void LDASetStatus()
+    {
+        Z = (A == 0);
+        N = (A & 0b10000000) > 0;
+    }
 
     void execute(u32 numCycles, MEMORY &memory)
     {
@@ -85,17 +101,24 @@ struct CPU
                 BYTE Value = fetchByte(numCycles, memory);
                 // These down below are some rules while setting the accumulator
                 A = Value;
-                Z = (A == 0);
-                N = (A & 0b10000000) > 0;
-
+                LDASetStatus();
             }
             break;
 
-            default: 
+            case INSTRUCTION_LDA_ZP:
+            {
+                BYTE ZeroPageAddress = fetchByte(numCycles, memory);
+                // These down below are some rules while setting the accumulator
+                A = readByte(numCycles, ZeroPageAddress, memory);
+                LDASetStatus();
+            }
+            break;
+
+            default:
             {
                 printf("Instruction not handled %d", Instruction);
             }
-                break;
+            break;
             }
         }
     }
@@ -107,9 +130,10 @@ int main()
     CPU cpu;
     cpu.reset(memory);
     // Hardcoding the instruction opcode and value in the PC location from which the processor starts reading.
-    memory[0xFFFC] = CPU::INSTRUCTION_LDA_IM;
+    memory[0xFFFC] = CPU::INSTRUCTION_LDA_ZP;
     memory[0xFFFD] = 0x42;
+    memory[0x0042] = 0x84;
     printf("Accumulator value before executing the LDA instruction is %x\n", cpu.A);
-    cpu.execute(2, memory);
+    cpu.execute(3, memory);
     printf("Accumulator value after executing the LDA instruction is %x\n", cpu.A);
 }
