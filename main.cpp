@@ -32,6 +32,15 @@ struct MEMORY
         // Assert here Adress is < MAX_MEM
         return Data[Address];
     }
+
+    // Write a word (2 Bytes)
+    void writeWord(WORD value, u32 address, u32 &numCycls) {  
+        // Cause my system is little endian
+        Data[address] = value & 0xFF;
+        Data[address + 1] = (value >> 8);
+        numCycls -= 2;
+    }
+
 };
 
 struct CPU
@@ -77,10 +86,26 @@ struct CPU
         return data;
     }
 
+     WORD fetchWord(u32 &numCycles, MEMORY &memory) // Basically reading 16 bits or 2 bytes
+    {
+        WORD data = memory[PC]; // Read one byte
+        PC++;
+        data = data | (memory[PC] << 8); // Read next byte (the reason for shifting the second byte left is cause my system is little endian so data is stored from least to most significant so second byte is the most significant byte and first one is least significant byte);
+        PC++;
+        numCycles -= 2; // Cause it took two cycles this time to read a word.
+        // If your system is big endian you will have to swap the bytes here. 
+        // if(PLATFORM_BIG_ENDIAN) 
+        //      swapBytesInWord(data);
+        return data;
+    }
+
     // Opcodes
     static constexpr BYTE
         INSTRUCTION_LDA_IM = 0xA9,
-        INSTRUCTION_LDA_ZP = 0xA5;
+        INSTRUCTION_LDA_ZP = 0xA5,
+        INSTRUCTION_LDA_ZPX = 0xB5,
+        INSTRUCTION_JSR = 0x20;
+
 
     // This is what you have to do in all the LDA instructions
     void LDASetStatus()
@@ -94,6 +119,7 @@ struct CPU
         while (numCycles > 0)
         {
             BYTE Instruction = fetchByte(numCycles, memory);
+          //  printf("Instruction fetched is %x", Instruction);
             switch (Instruction)
             {
             case INSTRUCTION_LDA_IM:
@@ -114,9 +140,31 @@ struct CPU
             }
             break;
 
+            case INSTRUCTION_LDA_ZPX:
+            {
+                BYTE ZeroPageAddress = fetchByte(numCycles, memory);
+                ZeroPageAddress += X; // This is what we have to do in zeroPageX instructions whatever zero page address you get you must add the X register contents to it and that's how you get the final operand address that you have to put in the accumulator.
+                numCycles--; // Incrementing the ZeroPageAddress takes one cycle
+                // These down below are some rules while setting the accumulator
+                A = readByte(numCycles, ZeroPageAddress, memory);
+                LDASetStatus();
+            }
+            break;
+ 
+            case INSTRUCTION_JSR:
+            {
+                WORD SubRoutineAddress = fetchWord(numCycles, memory);
+                memory.writeWord(PC - 1, SP, numCycles);
+                SP++;
+                PC = SubRoutineAddress;
+                numCycles--;
+            }
+            break;
+
             default:
             {
-                printf("Instruction not handled %d", Instruction);
+                printf("Instruction not handled %d\n ", Instruction);
+                numCycles--;
             }
             break;
             }
@@ -130,10 +178,12 @@ int main()
     CPU cpu;
     cpu.reset(memory);
     // Hardcoding the instruction opcode and value in the PC location from which the processor starts reading.
-    memory[0xFFFC] = CPU::INSTRUCTION_LDA_ZP;
-    memory[0xFFFD] = 0x42;
-    memory[0x0042] = 0x84;
+    memory[0xFFFC] = CPU::INSTRUCTION_JSR;
+    memory[0xFFFD] = 0x0042;
+    memory[0xFFFE] = 0x0042;
+    memory[0x4242] = CPU::INSTRUCTION_LDA_IM;
+    memory[0x4243] = 0x95;
     printf("Accumulator value before executing the LDA instruction is %x\n", cpu.A);
-    cpu.execute(3, memory);
+    cpu.execute(8, memory);
     printf("Accumulator value after executing the LDA instruction is %x\n", cpu.A);
 }
